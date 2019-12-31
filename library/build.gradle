@@ -1,0 +1,146 @@
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+apply plugin: 'kotlin-android-extensions'
+
+static def rebasePath(String... paths) {
+    def result = ""
+    paths.eachWithIndex { path, index ->
+        if (index < paths.length - 1) {
+            result += path + File.separator
+        } else {
+            result += path
+        }
+    }
+    return result
+}
+
+String findOrException(name) {
+    def result
+    if (project.hasProperty(name)) {
+        result = project[name]
+    } else {
+        throw new Exception("cannot find " + name + " in local.properties")
+    }
+    return result
+}
+def chromium_dir = findOrException("chromium_dir")
+
+def baseSrc = "base/android/java/src"
+def mediaBaseSrc = "media/base/android/java/src"
+def uiSrc = "ui/android/java/src"
+def contentPublicSrc = "content/public/android/java/src"
+def contentShellSrc = "content/shell/android/java/src"
+def netSrc = "net/android/java/src"
+
+def chromiumPackage = "org/chromium"
+
+android {
+    compileSdkVersion 29
+    buildToolsVersion "29.0.2"
+
+
+    defaultConfig {
+        minSdkVersion 15
+        targetSdkVersion 29
+        versionCode 1
+        versionName "1.0"
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        consumerProguardFiles 'consumer-rules.pro'
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    sourceSets {
+        main {
+            java {
+                srcDirs "src/main/java"
+                srcDirs "src/main/generated"
+                srcDirs "$chromium_dir/$baseSrc",
+                        "$chromium_dir/$mediaBaseSrc",
+                        "$chromium_dir/$uiSrc",
+                        "$chromium_dir/$contentPublicSrc",
+                        "$chromium_dir/$contentShellSrc",
+                        "$chromium_dir/$netSrc"
+            }
+        }
+
+        test {
+            java {
+                srcDirs "$chromium_dir/$mediaBaseSrc/test"
+            }
+        }
+    }
+}
+
+dependencies {
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
+    implementation 'androidx.appcompat:appcompat:1.1.0'
+    implementation 'androidx.core:core-ktx:1.1.0'
+    testImplementation 'junit:junit:4.12'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.1'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.2.0'
+}
+
+def compileAidl(interfaceFiles = [], importIncludes = [], sources = []) {
+    sources.each { source ->
+        def commands = []
+        def isWindows = System.getProperty("os.name").toLowerCase().startsWith("windows")
+        if (isWindows) {
+            commands << "cmd"
+            commands << "/c"
+        } else {
+            commands << "bash"
+            commands << "-c"
+        }
+        commands << "${android.sdkDirectory.path}/build-tools/${android.buildToolsVersion}/aidl${isWindows ? ".exe" : ""}"
+        commands << "-p${android.sdkDirectory.path}/platforms/${android.compileSdkVersion}/framework.aidl"
+        interfaceFiles.each { interfaceFile ->
+            commands << "-p$interfaceFile"
+        }
+        def outDir = new File("src/main/generated/aidl")
+        if (!outDir.exists()) {
+            outDir.mkdirs()
+        }
+        commands << "-o${outDir.path}"
+            importIncludes.each { include ->
+            commands << "-I$include"
+        }
+        commands << source
+        exec {
+            commandLine = commands
+        }
+    }
+}
+
+gradle.taskGraph.afterTask { task ->
+    if (task.project.name == project.name) {
+        if (task.name.matches("compile.*Aidl")) {
+            def contentPublic = "$chromium_dir/$contentPublicSrc"
+            compileAidl(
+                    ["$contentPublic/org/chromium/content/common/common.aidl"],
+                    [contentPublic],
+                    ["$contentPublic/org/chromium/content/common/IGpuProcessCallback.aidl",
+                     "$contentPublic/org/chromium/content/common/SurfaceWrapper.aidl"]
+            )
+
+            compileAidl(
+                    ["$contentPublic/org/chromium/payments_common.aidl"],
+                    [contentPublic],
+                    ["$contentPublic/org/chromium/IsReadyToPayService.aidl",
+                     "$contentPublic/org/chromium/IsReadyToPayServiceCallback.aidl"]
+            )
+        }
+    }
+}

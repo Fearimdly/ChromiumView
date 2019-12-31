@@ -1,0 +1,45 @@
+apply plugin: 'java-library'
+
+def useHashedJniNames = buildType != "debug"
+
+dependencies {
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+    implementation "com.google.auto.service:auto-service:1.0-rc2"
+    implementation "com.google.guava:guava:28.1-jre"
+    implementation "com.squareup:javapoet:1.11.1"
+    implementation "javax.annotation:jsr250-api:1.0"
+}
+
+sourceCompatibility = "8"
+targetCompatibility = "8"
+
+sourceSets {
+    main {
+        java {
+            srcDirs "src/main/java",
+                    "$chromium_dir/base/android/jni_generator/java/src",
+                    "$chromium_dir/base/android/java/src"
+            include "org/chromium/jni_generator/"
+            include "org/chromium/base/JniStaticTestMocker.java"
+            include "org/chromium/base/annotations/CheckDiscard.java"
+            include "org/chromium/base/annotations/MainDex.java"
+            include "org/chromium/base/annotations/NativeMethods.java"
+        }
+    }
+}
+
+task generateProcessorArgs {
+    def commands = []
+    def isWindows = startCommands(commands)
+    commands << "python"
+    commands << "$chromium_dir/build/android/gyp/gcc_preprocess.py"
+    commands << "--include-path" << "$chromium_dir"
+    commands << "--output" << "${projectDir.path}/src/main/java/org/chromium/jni_generator/ProcessorArgs.java"
+    commands << "--template" << "$chromium_dir/base/android/jni_generator/ProcessorArgs.template"
+    commands << "--defines" << "HASH_JNI_NAMES_VALUE=$useHashedJniNames"
+    println commands
+    exec {
+        workingDir "$chromium_dir"
+        commandLine commands
+    }
+}
