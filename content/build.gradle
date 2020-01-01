@@ -1,0 +1,77 @@
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+apply plugin: 'kotlin-android-extensions'
+
+def contentPublicSrc = "content/public/android/java/src"
+def contentShellSrc = "content/shell/android/java/src"
+
+android {
+    compileSdkVersion 29
+    buildToolsVersion "29.0.2"
+
+    defaultConfig {
+        minSdkVersion 15
+        targetSdkVersion 29
+        versionCode 1
+        versionName "1.0"
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        consumerProguardFiles 'consumer-rules.pro'
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    sourceSets {
+        main {
+            java {
+                srcDirs "src/main/generated",
+                        "$chromium_dir/$contentPublicSrc",
+                        "$chromium_dir/$contentShellSrc"
+                exclude "**/test/**"
+            }
+        }
+    }
+}
+
+dependencies {
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+    testImplementation 'junit:junit:4.12'
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
+    implementation "com.google.code.findbugs:jsr305:3.0.2"
+
+    implementation project(path: ":jniprocessor")
+    annotationProcessor project(path: ":jniprocessor")
+
+    implementation project(path: ":base")
+}
+
+gradle.taskGraph.afterTask { task ->
+    if (task.project.name == project.name) {
+        if (task.name.matches("compile.*Aidl")) {
+            def contentPublic = "$chromium_dir/$contentPublicSrc"
+            compileAidl(
+                    ["$contentPublic/org/chromium/content/common/common.aidl"],
+                    [contentPublic],
+                    ["$contentPublic/org/chromium/content/common/IGpuProcessCallback.aidl",
+                     "$contentPublic/org/chromium/content/common/SurfaceWrapper.aidl"]
+            )
+
+            compileAidl(
+                    ["$contentPublic/org/chromium/payments_common.aidl"],
+                    [contentPublic],
+                    ["$contentPublic/org/chromium/IsReadyToPayService.aidl",
+                     "$contentPublic/org/chromium/IsReadyToPayServiceCallback.aidl"]
+            )
+        }
+    }
+}

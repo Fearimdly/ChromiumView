@@ -1,6 +1,6 @@
 apply plugin: 'java-library'
 
-def useHashedJniNames = buildType != "debug"
+def useHashedJniNames = true // not debug
 
 dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
@@ -8,6 +8,8 @@ dependencies {
     implementation "com.google.guava:guava:28.1-jre"
     implementation "com.squareup:javapoet:1.11.1"
     implementation "javax.annotation:jsr250-api:1.0"
+
+    annotationProcessor "com.google.auto.service:auto-service:1.0-rc2"
 }
 
 sourceCompatibility = "8"
@@ -29,17 +31,27 @@ sourceSets {
 }
 
 task generateProcessorArgs {
-    def commands = []
-    def isWindows = startCommands(commands)
-    commands << "python"
-    commands << "$chromium_dir/build/android/gyp/gcc_preprocess.py"
-    commands << "--include-path" << "$chromium_dir"
-    commands << "--output" << "${projectDir.path}/src/main/java/org/chromium/jni_generator/ProcessorArgs.java"
-    commands << "--template" << "$chromium_dir/base/android/jni_generator/ProcessorArgs.template"
-    commands << "--defines" << "HASH_JNI_NAMES_VALUE=$useHashedJniNames"
-    println commands
-    exec {
-        workingDir "$chromium_dir"
-        commandLine commands
+    doFirst {
+        def commands = []
+        startCommands(commands)
+        def output = "${projectDir.path}/src/main/java/org/chromium/jni_generator/ProcessorArgs.java"
+        def source = "$chromium_dir/base/android/jni_generator/ProcessorArgs.template"
+
+        commands << (isWindows ? "wsl gcc" : "gcc")
+        commands << "-D" << "HASH_JNI_NAMES_VALUE=$useHashedJniNames"
+        commands << "-E"
+        commands << "-D" << "ANDROID"
+        commands << "-x" << "c-header"
+        commands << "-P"
+        commands << "-I" << wslPath(chromium_dir)
+        commands << "-o" << wslPath(output)
+        commands << wslPath(source)
+
+        exec {
+            workingDir "$chromium_dir"
+            commandLine commands
+        }
     }
 }
+
+compileJava.dependsOn generateProcessorArgs

@@ -27,12 +27,7 @@ def chromium_dir = findOrException("chromium_dir")
 
 def baseSrc = "base/android/java/src"
 def mediaBaseSrc = "media/base/android/java/src"
-def uiSrc = "ui/android/java/src"
-def contentPublicSrc = "content/public/android/java/src"
-def contentShellSrc = "content/shell/android/java/src"
 def netSrc = "net/android/java/src"
-
-def chromiumPackage = "org/chromium"
 
 android {
     compileSdkVersion 29
@@ -67,10 +62,7 @@ android {
                 srcDirs "src/main/java"
                 srcDirs "src/main/generated"
                 srcDirs "$chromium_dir/$baseSrc",
-                        "$chromium_dir/$mediaBaseSrc",
-                        "$chromium_dir/$uiSrc",
-                        "$chromium_dir/$contentPublicSrc",
-                        "$chromium_dir/$contentShellSrc",
+                        "$chromium_dir/$mediaBaseSrc"
                         "$chromium_dir/$netSrc"
 
                 exclude "**/test/**"
@@ -89,6 +81,7 @@ dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
     testImplementation 'junit:junit:4.12'
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
+    implementation "javax.annotation:jsr250-api:1.0"
     implementation "com.google.code.findbugs:jsr305:3.0.2"
     def supportLibVersion = '28.0.0'
     implementation "com.android.support:support-v4:${supportLibVersion}"
@@ -103,47 +96,18 @@ dependencies {
     annotationProcessor project(path: ":jniprocessor")
 }
 
-def compileAidl(interfaceFiles = [], importIncludes = [], sources = []) {
-    sources.each { source ->
-        def commands = []
-        startCommands(commands)
-        commands << "${android.sdkDirectory.path}/build-tools/${android.buildToolsVersion}/aidl${isWindows ? ".exe" : ""}"
-        commands << "-p${android.sdkDirectory.path}/platforms/${android.compileSdkVersion}/framework.aidl"
-        interfaceFiles.each { interfaceFile ->
-            commands << "-p$interfaceFile"
-        }
-        def outDir = new File("${project.projectDir.path}/src/main/generated")
-        if (!outDir.exists()) {
-            outDir.mkdirs()
-        }
-        commands << "-o${outDir.path}"
-            importIncludes.each { include ->
-            commands << "-I$include"
-        }
-        commands << source
-        exec {
-            commandLine = commands
-        }
-    }
-}
-
 gradle.taskGraph.afterTask { task ->
     if (task.project.name == project.name) {
         if (task.name.matches("compile.*Aidl")) {
-            def contentPublic = "$chromium_dir/$contentPublicSrc"
+            def base = "$chromium_dir/$baseSrc"
             compileAidl(
-                    ["$contentPublic/org/chromium/content/common/common.aidl"],
-                    [contentPublic],
-                    ["$contentPublic/org/chromium/content/common/IGpuProcessCallback.aidl",
-                     "$contentPublic/org/chromium/content/common/SurfaceWrapper.aidl"]
-            )
-
-            compileAidl(
-                    ["$contentPublic/org/chromium/payments_common.aidl"],
-                    [contentPublic],
-                    ["$contentPublic/org/chromium/IsReadyToPayService.aidl",
-                     "$contentPublic/org/chromium/IsReadyToPayServiceCallback.aidl"]
+                    [],
+                    [base],
+                    ["$base/org/chromium/base/process_launcher/IChildProcessService.aidl",
+                     "$base/org/chromium/base/process_launcher/IParentProcess.aidl"]
             )
         }
     }
 }
+
+

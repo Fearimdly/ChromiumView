@@ -1,2 +1,2 @@
-include ':app', ':library', ':jniprocessor'
+include ':app', ':jniprocessor', ':base', ':ui', ':content'
 rootProject.name='ChromiumView'

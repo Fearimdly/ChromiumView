@@ -3,6 +3,8 @@ import java.util.regex.Pattern
 
 // Top-level build file where you can add configuration options common to all sub-projects/modules.
 
+def is_windows = System.getProperty("os.name").toLowerCase().startsWith("windows")
+
 buildscript {
     ext.kotlin_version = '1.3.50'
     repositories {
@@ -23,13 +25,18 @@ allprojects {
         google()
         jcenter()
     }
-    parseLocalProperties()
-    def currentBuildType = getCurrentBuildType()
-
+    parse_local_properties()
+    get_current_build_type(project)
     ext {
-        buildType = currentBuildType
+        isWindows = is_windows
         startCommands = { commands ->
-            return commandStart(commands)
+            return start_commands(commands)
+        }
+        compileAidl = { interfaceFiles = [], importIncludes = [], sources = [] ->
+            compile_aidl(project, interfaceFiles, importIncludes, sources)
+        }
+        wslPath = { path ->
+            return wsl_path(path)
         }
     }
 }
@@ -38,7 +45,7 @@ task clean(type: Delete) {
     delete rootProject.buildDir
 }
 
-def parseLocalProperties(){
+def parse_local_properties(){
     File file = rootProject.file('local.properties')
     if(file.exists()) {
         InputStream inputStream = rootProject.file('local.properties').newDataInputStream();
@@ -54,25 +61,30 @@ def parseLocalProperties(){
     }
 }
 
-def getCurrentBuildType() {
-    String tskReqStr = gradle.startParameter.taskRequests.toString()
-
-    Pattern pattern
-    if (tskReqStr.contains("assemble")) {
-        pattern = Pattern.compile("assemble(\\w*)(Release|Debug)")
-    } else {
-        pattern = Pattern.compile("generate(\\w*)(Release|Debug)")
+def get_current_build_type(project) {
+    if (!hasProperty("buildType")) {
+        ext.buildType = new HashMap<String, String>()
     }
-    Matcher matcher = pattern.matcher(tskReqStr)
-    if (matcher.find()) {
-        return matcher.group(matcher.groupCount()).toLowerCase()
-    } else {
-        println "NO MATCH FOUND"
-        return ""
+    def taskRequests = gradle.startParameter.taskRequests
+    taskRequests.each { request ->
+        request.args.each { args ->
+            if (args.startsWith(":${project.name}")) {
+                def pattern
+                if (args.contains("assemble")) {
+                    pattern = Pattern.compile("assemble(\\w*)(Release|Debug)")
+                } else {
+                    pattern = Pattern.compile("generate(\\w*)(Release|Debug)")
+                }
+                def matcher = pattern.matcher(args)
+                if (matcher.find()) {
+                    ext.buildType[project.name] = matcher.group(matcher.groupCount()).toLowerCase()
+                }
+            }
+        }
     }
 }
 
-boolean commandStart(commands) {
+def start_commands(commands) {
     def isWindows = System.getProperty("os.name").toLowerCase().startsWith("windows")
     if (isWindows) {
         commands << "cmd"
@@ -81,5 +93,44 @@ boolean commandStart(commands) {
         commands << "bash"
         commands << "-c"
     }
-    return isWindows
+}
+
+def compile_aidl(project, interfaceFiles = [], importIncludes = [], sources = []) {
+    sources.each { source ->
+        def commands = []
+        startCommands(commands)
+        commands << "${project.android.sdkDirectory.path}/build-tools/${project.android.buildToolsVersion}/aidl${isWindows ? ".exe" : ""}"
+        commands << "-p${project.android.sdkDirectory.path}/platforms/${project.android.compileSdkVersion}/framework.aidl"
+        interfaceFiles.each { interfaceFile ->
+            commands << "-p$interfaceFile"
+        }
+        def outDir = new File("${project.projectDir.path}/src/main/generated")
+        if (!outDir.exists()) {
+            outDir.mkdirs()
+        }
+        commands << "-o${outDir.path}"
+        importIncludes.each { include ->
+            commands << "-I$include"
+        }
+        commands << source
+        exec {
+            commandLine = commands
+        }
+    }
+}
+
+def wsl_path(path) {
+    if (!isWindows) {
+        return path
+    }
+    def splits = path.split(":")
+    if (splits.length == 2) {
+        def diskLabel = splits[0].toLowerCase()
+        if (diskLabel.length() > 1) {
+            return path
+        }
+        def relativePath = splits[1].replaceAll('\\\\', '/')
+        return "/mnt/$diskLabel${relativePath}"
+    }
+    return path
 }
